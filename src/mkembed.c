@@ -322,7 +322,7 @@ char *
 emb_label_add_lag (char *emb_label, char *var_name, int lag, bool first_of_group)
 {
     static char *prev_var_name = NULL;
-    char aint[10];
+    char aint[15];
 
     if (!emb_label)
     {
@@ -344,7 +344,7 @@ emb_label_add_lag (char *emb_label, char *var_name, int lag, bool first_of_group
 
     if (lag != INT_MAX)
     {
-        snprintf (aint, 10, ",%d", lag);
+        snprintf (aint, 15, ",%d", lag);
         emb_label = (char *) realloc (emb_label, (strlen(emb_label) + strlen(aint) + 1) * sizeof(char));
         emb_label = strcat (emb_label, aint);
     }
