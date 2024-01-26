@@ -1,7 +1,6 @@
 /*
- * $Log: fn_tls_log.h,v $
- * Revision 1.1  2022/01/21 09:23:27  R.B.Toonen
- * Changed kern names in fn.
+ * Copyright (c) 2022 Roelof Bart Toonen
+ * License: MIT license (spdx.org MIT)
  *
  */
 
@@ -58,6 +57,65 @@ static Trec_meta _m = { LOG_VPT, "VPT", 4, &_s, \
         { "vpt_pre_val_num", FT_INT, -1, &_s.pre_val_num }, \
         { "vpt_var_coord", FT_INT, -1, &_s.var_coord }, \
         { "vpt_var_val", FT_DOUBLE, -1, &_s.var_val } \
+    } \
+}
+
+struct s_log_dtlso {
+    double  tol1;
+    double  tol2;
+    int     ldx;
+    int     rank;
+    int     ierr;
+    int     iwarn;
+    int     ldc;
+    int     m;
+    int     n;
+    int     l;
+};
+
+#define ATTACH_META_DTLSO(_m, _s) \
+static Trec_meta _m = { LOG_DTLSO, "DTLSO", 10, &_s, \
+    { \
+        { "dtlso_tol1", FT_DOUBLE, -1, &_s.tol1 }, \
+        { "dtlso_tol2", FT_DOUBLE, -1, &_s.tol2 }, \
+        { "dtlso_ldx", FT_INT, -1, &_s.ldx }, \
+        { "dtlso_rank", FT_INT, -1, &_s.rank }, \
+        { "dtlso_ierr", FT_INT, -1, &_s.ierr }, \
+        { "dtlso_iwarn", FT_INT, -1, &_s.iwarn }, \
+        { "dtlso_ldc", FT_INT, -1, &_s.ldc }, \
+        { "dtlso_m", FT_INT, -1, &_s.m }, \
+        { "dtlso_n", FT_INT, -1, &_s.n }, \
+        { "dtlso_l", FT_INT, -1, &_s.l } \
+    } \
+}
+
+struct s_log_dtlsan {    /*Name of array*/
+    char    name;  /*C, S, X*/
+    long    nrow;
+    long    ncol;
+};
+
+#define ATTACH_META_DTLSAN(_m, _s) \
+static Trec_meta _m = { LOG_DTLSAN, "DTLSAN", 3, &_s, \
+    { \
+        { "dtlsan_name", FT_CHAR, -1, &_s.name }, \
+        { "dtlsan_nrow", FT_LONG, -1, &_s.nrow }, \
+        { "dtlsan_ncol", FT_LONG, -1, &_s.ncol } \
+    } \
+}
+
+struct s_log_dtlsav {    /*Array values*/
+    long      row;
+    long      col;
+    double    val;
+};
+
+#define ATTACH_META_DTLSAV(_m, _s) \
+static Trec_meta _m = { LOG_DTLSAV, "DTLSAV", 3, &_s, \
+    { \
+        { "dtlsav_row", FT_LONG, -1, &_s.row }, \
+        { "dtlsav_col", FT_LONG, -1, &_s.col }, \
+        { "dtlsav_val", FT_DOUBLE, -1, &_s.val } \
     } \
 }
 

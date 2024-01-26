@@ -48,6 +48,11 @@ log_fn_params_tls (void);
 int
 log_var_params (Tpoint *target, int e, int n_pre_val, int ldx, double *var_par, bool center, double *means);
 
+int
+log_dtls (double tol1, double tol2, int ldx, int rank, int ierr,
+          int iwarn, int ldc, int m, int n, int l,
+          double *c, double *x, double *s);
+
 static void
 init_xnn (void);
 
@@ -210,7 +215,7 @@ get_xnn_ref_dst ()
 static int
 fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sqdst, double *weight,
               int ldc, int e, int n_pre_val, double *means, bool center,
-              Ttls_ref_meth ref_meth, int ref_xnn)
+              Ttls_ref_meth ref_meth)
 {
     double   *p1_aug_mat, *p2_aug_mat;
     double   *p_sqdst, *p_weight;
@@ -259,6 +264,7 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
             add_xnn (dval);
 
         /* copy vector and prediction values into augmented matrix */
+
         p2_aug_mat = p1_aug_mat;
         /* first column is 1, to allow for constant */
         *p2_aug_mat = 1.0;
@@ -317,6 +323,7 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
     for (p_weight = weight; p_weight < weight + n; p_weight++)
         *p_weight = exp (fact * (*p_weight));
 
+    /* This looks a bit messy, due to the fact that the augmented matrix is in column first order */
     p1_aug_mat = aug_mat;
     for (i = 0; i < aug_n_col; i++)
     {
@@ -376,6 +383,7 @@ tls (double *aug_mat, int ldc, int n_points, int n_a, int n_b, double **_x, int 
 /*    if (iwarn > 0)
  *      fprintf (stderr, "Warning: rank lowered to %d\n", rank);
  */
+    log_dtls (tol1, tol2, *_ldx, rank, ierr, iwarn, ldc, n_points, n_a, n_b, aug_mat, l_x, l_s);
 
     *_x   = l_x;
     *err  = ierr;
@@ -408,8 +416,8 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
 {
     TkdtNode *tx;
     double   *sqdst, *weight;
-    double   *c, *p1_x, *aug_mat, *p_pre_val;
-    double   avg_dst, dval, *p_vec, *vec, fact;
+    double   *p1_x, *aug_mat, *p_pre_val;
+//    double   *c, *p1_x, *aug_mat, *p_pre_val;
     int      aug_n_col, aug_n_points, ldc, e, n_pre_val, i, j, ierr, iwarn, ldx, n_rs, n_warn;
     Tpoint   **ptarget;
     Tpoint   **rs;       /*result set*/
@@ -419,6 +427,9 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
     n_pre_val = pre_set->n_pre_val;
     n_warn = 0;
 
+    /* means contains the mean value per axis, over all vectors from the result set.
+     * It is filled in fill_aug_matrix.
+     */
     if (l_center)
         means = (double *) malloc ((e + n_pre_val) * sizeof(double));
 
@@ -462,7 +473,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
         }
 
         aug_n_points = fill_aug_mat (aug_mat, *ptarget, rs, n_rs, sqdst, weight,
-                                     ldc, e, n_pre_val, means, l_center, l_ref_meth, l_ref_xnn);
+                                     ldc, e, n_pre_val, means, l_center, l_ref_meth);
 
         if (aug_n_points == 0)
         {
@@ -624,6 +635,102 @@ log_var_params (Tpoint *target, int e, int n_pre_val, int ldx, double *var_par, 
 
         p1_var_par += ldx;
     }
+    return 0;
+}
+
+int
+log_dtls (double tol1, double tol2, int ldx, int rank, int ierr,
+          int iwarn, int ldc, int m, int n, int l,
+          double *c, double *x, double *s)
+{
+    static struct s_log_dtlso log_dtlso;
+    static struct s_log_dtlsan log_dtlsan;
+    static struct s_log_dtlsav log_dtlsav;
+    double *prow, *pval;
+
+    long row,col;
+#ifdef LOG_HUMAN
+    ATTACH_META_DTLSO(meta_log_dtlso, log_dtlso);
+    ATTACH_META_DTLSAN(meta_log_dtlsan, log_dtlsan);
+    ATTACH_META_DTLSAV(meta_log_dtlsav, log_dtlsav);
+#endif
+
+    if (!g_log_file)
+        return 1;
+
+    if ( !((g_log_level & LOG_DTLS_STATUS) || (g_log_level & LOG_DTLS_ARRAYS)) )
+        return 2;
+
+    log_dtlso.tol1  = tol1;
+    log_dtlso.tol2  = tol2;
+    log_dtlso.ldx   = ldx;
+    log_dtlso.rank  = rank;
+    log_dtlso.ierr  = ierr;
+    log_dtlso.iwarn = iwarn;
+    log_dtlso.ldc   = ldc;
+    log_dtlso.m     = m;
+    log_dtlso.n     = n;
+    log_dtlso.l     = l;
+
+    LOGREC(LOG_DTLSO, &log_dtlso, sizeof (log_dtlso), &meta_log_dtlso);
+
+    if ( !(g_log_level & LOG_DTLS_ARRAYS) )
+        return 0;
+
+    log_dtlsan.name = 'C';
+    log_dtlsan.nrow = ldc;
+    log_dtlsan.ncol = n + l;
+
+    LOGREC(LOG_DTLSAN, &log_dtlsan, sizeof (log_dtlsan), &meta_log_dtlsan);
+
+    prow = c;
+    for (log_dtlsav.row = 0; log_dtlsav.row < log_dtlsan.nrow; log_dtlsav.row++)
+    {
+      pval = prow;
+      for (log_dtlsav.col = 0; log_dtlsav.col < log_dtlsan.ncol; log_dtlsav.col++)
+      {
+        log_dtlsav.val = *pval;
+        pval += ldc;
+        LOGREC(LOG_DTLSAV, &log_dtlsav, sizeof (log_dtlsav), &meta_log_dtlsav);
+      }
+      prow++;
+    }
+
+    log_dtlsan.name = 'S';
+    log_dtlsan.nrow = n + l;
+    log_dtlsan.ncol = 1;
+
+    LOGREC(LOG_DTLSAN, &log_dtlsan, sizeof (log_dtlsan), &meta_log_dtlsan);
+
+    prow = s;
+    log_dtlsav.col = 0;
+    for (log_dtlsav.row = 0; log_dtlsav.row < log_dtlsan.nrow; log_dtlsav.row++)
+    {
+      log_dtlsav.val = *prow;
+      LOGREC(LOG_DTLSAV, &log_dtlsav, sizeof (log_dtlsav), &meta_log_dtlsav);
+
+      prow++;
+    }
+
+    log_dtlsan.name = 'X';
+    log_dtlsan.nrow = ldx;
+    log_dtlsan.ncol = l;
+
+    LOGREC(LOG_DTLSAN, &log_dtlsan, sizeof (log_dtlsan), &meta_log_dtlsan);
+
+    prow = x;
+    for (log_dtlsav.row = 0; log_dtlsav.row < log_dtlsan.nrow; log_dtlsav.row++)
+    {
+      pval = prow;
+      for (log_dtlsav.col = 0; log_dtlsav.col < log_dtlsan.ncol; log_dtlsav.col++)
+      {
+        log_dtlsav.val = *pval;
+        pval += ldx;
+        LOGREC(LOG_DTLSAV, &log_dtlsav, sizeof (log_dtlsav), &meta_log_dtlsav);
+      }
+      prow++;
+    }
+
     return 0;
 }
 

@@ -9,7 +9,7 @@
 
 typedef enum { FT_CHAR, FT_STRING, FT_INT, FT_SHORT, FT_LONG, FT_DOUBLE } Tfield_type;
 
-#define N_LOG_REC 27
+#define N_LOG_REC 30
 
 typedef enum {
     LOG_BP           = 0,
@@ -38,7 +38,10 @@ typedef enum {
     LOG_STNP         = 23,
     LOG_STAT         = 24,
     LOG_ADHD         = 25,
-    LOG_ADDT         = 26
+    LOG_ADDT         = 26,
+    LOG_DTLSO        = 27,
+    LOG_DTLSAN       = 28,
+    LOG_DTLSAV       = 29
 } Tlog_rec_type;
 
 #define MAX_COLNAME_LOG 30

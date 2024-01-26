@@ -40,7 +40,9 @@ typedef enum { LOG_STATISTICS   = 0x0001, /*STAT, ADHD, ADDT            */
                LOG_PREDICTED    = 0x0100, /*TG2, PD                     */
                LOG_MSGS         = 0x0200, /*MSG                         */
                LOG_VAR_PAR      = 0x0400, /*VPM, VPT                    */
-               LOG_BUNDLE_PAR   = 0x0800  /*BP                          */
+               LOG_BUNDLE_PAR   = 0x0800, /*BP                          */
+               LOG_DTLS_STATUS  = 0x1000, /*DTLSO                       */
+               LOG_DTLS_ARRAYS  = 0x2000, /*DTLSO,DTLSAN,DTLSAV         */
 } Tlog_levels;
 
 int
