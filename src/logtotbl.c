@@ -52,6 +52,9 @@ static struct s_log_stnp l_log_stnp;
 static struct s_log_stat l_log_stat;
 static struct s_log_adhd l_log_adhd;
 static struct s_log_addt l_log_addt;
+static struct s_log_dtlso l_log_dtlso;
+static struct s_log_dtlsan l_log_dtlsan;
+static struct s_log_dtlsav l_log_dtlsav;
 
 /* Attach meta definitions */
 ATTACH_META_BP(meta_bp, l_log_bp);
@@ -81,6 +84,9 @@ ATTACH_META_STNP(meta_stnp, l_log_stnp);
 ATTACH_META_STAT(meta_stat, l_log_stat);
 ATTACH_META_ADHD(meta_adhd, l_log_adhd);
 ATTACH_META_ADDT(meta_addt, l_log_addt);
+ATTACH_META_DTLSO(meta_dtlso, l_log_dtlso);
+ATTACH_META_DTLSAN(meta_dtlsan, l_log_dtlsan);
+ATTACH_META_DTLSAV(meta_dtlsav, l_log_dtlsav);
 
 static Ttbl_rec *l_tbl_rec = NULL;
 
@@ -348,6 +354,9 @@ init_struct_lists (Trec_meta *rec_meta[], void *rec_struct[N_LOG_REC])
     rec_meta[meta_stat.rec_type] = &meta_stat;
     rec_meta[meta_adhd.rec_type] = &meta_adhd;
     rec_meta[meta_addt.rec_type] = &meta_addt;
+    rec_meta[meta_dtlso.rec_type] = &meta_dtlso;
+    rec_meta[meta_dtlsan.rec_type] = &meta_dtlsan;
+    rec_meta[meta_dtlsav.rec_type] = &meta_dtlsav;
 
     for (i = 0; i < N_LOG_REC; i++)
         rec_struct[i] = rec_meta[i]->rec; /*pointer to corresponding structure*/
