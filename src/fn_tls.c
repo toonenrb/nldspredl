@@ -29,6 +29,7 @@ static Ttls_ref_meth l_ref_meth;
 static int    l_ref_xnn;
 static double *l_shortest_dist = NULL;
 static bool   l_warn_is_error;
+static bool   l_object_only_once;
 
 int
 new_fn_params_tls (int e, void **fn_params);
@@ -67,7 +68,7 @@ init_fn_tls (Tnew_fn_params *new_fn_params,
                  Tfn *fn,
                  double theta_min, double theta_max, double delta_theta,
                  int nnn, Texcl excl, int var_win, bool center, double restrict_prediction,
-                 bool warn_is_error, Ttls_ref_meth ref_meth, int ref_xnn)
+                 bool warn_is_error, Ttls_ref_meth ref_meth, int ref_xnn, bool object_only_once)
 {
     l_nnn     = nnn;
     l_excl    = excl;
@@ -83,6 +84,7 @@ init_fn_tls (Tnew_fn_params *new_fn_params,
     l_ref_xnn     = ref_xnn;
     
     l_warn_is_error = warn_is_error;
+    l_object_only_once = object_only_once;
 
     if (l_ref_meth == KTLS_REFMETH_XNN_GT_ZERO && l_ref_xnn < 1)
     {
@@ -468,7 +470,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
         {
             /* Find nearest neighbours */
             kdt_nn ((void *)(*ptarget), tx, lib_set->e, l_nnn, 
-                   (void **) rs, sqdst, (double * (*)(void *))get_co_vec, (bool (*)(void *, void *))exclude, true); 
+                   (void **) rs, sqdst, (double * (*)(void *))get_co_vec, (bool (*)(void *, void *))exclude, l_object_only_once); 
             log_nn (*ptarget, rs, sqdst, l_nnn);
         }
 
@@ -580,6 +582,7 @@ log_fn_params_tls (void)
     log_kptls.var_win = l_var_win;
     log_kptls.theta = l_theta;
     log_kptls.center = l_center? 1: 0;
+    log_kptls.object_only_once = l_object_only_once;
 
     LOGREC(LOG_KPTLS, &log_kptls, sizeof (log_kptls), &meta_log_kptls);
 

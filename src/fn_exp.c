@@ -36,22 +36,23 @@ est_pre_val (Tpoint **rs, double *sqdst, int n, int n_pre_val, double *pre_val, 
 static int   l_nnn_add;    /* Number of nearest neighbours to add to embedding dimension.*/
 static Texcl l_excl;       /* How to exclude vectors from library, based upon predictor vector.*/
 static int   l_var_win;
-static void  *l_fn_params = NULL;
 static Tfn_denom l_fn_denom;
 static double l_exp_k;
+static bool  l_object_only_once = true;
 
 
 /* Exponential fn: neighbour values are exponentially weighted to make a prediction for target value*/
 int
 init_fn_exponential (Tnew_fn_params *new_fn_params, Tnext_fn_params *next_fn_params, Tfn *fn,
                          int nnn_add, Texcl excl, int var_win,
-                         Tfn_denom fn_denom, double exp_k)
+                         Tfn_denom fn_denom, double exp_k, bool object_only_once)
 {
     l_nnn_add = nnn_add;
     l_excl    = excl;
     l_var_win = var_win;
     l_exp_k   = exp_k;
     l_fn_denom = fn_denom;
+    l_object_only_once = object_only_once;
 
     *new_fn_params  = &new_fn_params_exponential;
     *next_fn_params = &next_fn_params_exponential;
@@ -187,7 +188,7 @@ fn_exponential (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
     {
         /*find nearest neighbours*/
         kdt_nn ((void *)(*target), tx, lib_set->e, nnn, 
-               (void **) rs, sqdst, (double * (*)(void *))get_co_vec, (bool (*)(void *, void *))exclude, true); 
+               (void **) rs, sqdst, (double * (*)(void *))get_co_vec, (bool (*)(void *, void *))exclude, l_object_only_once); 
         log_nn (*target, rs, sqdst, nnn);
 
         if (full_set (rs, nnn))
@@ -293,6 +294,7 @@ log_fn_params_exponential (void)
     log_kpexp.var_win = l_var_win;
     log_kpexp.denom_type = (int) l_fn_denom;
     log_kpexp.exp_k = l_exp_k;
+    log_kpexp.object_only_once = (short) l_object_only_once;
 
     LOGREC(LOG_KPEXP, &log_kpexp, sizeof (log_kpexp), &meta_log_kpexp);
 

@@ -18,7 +18,7 @@ init_fn_tls (Tnew_fn_params *new_fn_params,
              Tfn *fn,
              double theta_min, double theta_max, double delta_theta,
              int nnn, Texcl excl, int var_win, bool center, double restrict_prediction,
-             bool warn_is_error, Ttls_ref_meth ref_meth, int ref_xnn);
+             bool warn_is_error, Ttls_ref_meth ref_meth, int ref_xnn, bool object_only_once);
 
 typedef struct
 {

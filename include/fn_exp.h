@@ -16,7 +16,8 @@ init_fn_exponential (Tnew_fn_params *new_fn_params,
                      Tnext_fn_params *next_fn_params,
                      Tfn *fn,
                      int nnn_add, Texcl excl, int var_win,
-                     Tfn_denom fn_denom, double exp_k);
+                     Tfn_denom fn_denom, double exp_k,
+                     bool object_only_once);
 
 typedef struct
 {

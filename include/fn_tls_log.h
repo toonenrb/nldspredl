@@ -15,6 +15,7 @@ struct s_log_kptls {
     int     var_win;
     double  theta;
     int     center;
+    short   object_only_once;
 };
 
 #define ATTACH_META_KPTLS(_m, _s) \
@@ -24,7 +25,8 @@ static Trec_meta _m = { LOG_KPTLS, "KPTLS", 5, &_s, \
         { "kptls_excl", FT_INT, -1, &_s.excl }, \
         { "kptls_var_win", FT_INT, -1, &_s.var_win }, \
         { "kptls_theta", FT_DOUBLE, -1, &_s.theta }, \
-        { "kptls_center", FT_INT, -1, &_s.center } \
+        { "kptls_center", FT_INT, -1, &_s.center }, \
+        { "kptls_object_only_once", FT_SHORT, -1, &_s.object_only_once } \
     } \
 }
 
