@@ -164,7 +164,7 @@ fn_exponential (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
     Tpoint   **rs;       /*result set*/
     Tpoint   **target;
     double   *p_pre_val;
-    double   rms_dist, dist, lib_rms_dist;
+    double   rms_dist, dist, lib_rms_dist, mean_dist;
     int      nnn;        /*N nearest neighbours*/
     int      res, i;
 
@@ -199,7 +199,12 @@ fn_exponential (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
             {
                 if (l_fn_denom == FN_WEIGHT_DENOM_AVG_NN)
                 {
-                    rms_dist = get_rms_dist (rs, nnn, lib_set->e);
+                    /* Calculate mean distance between target and neighbors*/
+                    mean_dist = 0.0;
+                    for (i = 0; i < nnn; i++)
+                        mean_dist += (sqrt(sqdst[i] - mean_dist) / (i + 1));
+
+                    rms_dist = mean_dist;
                 }
                 else if (l_fn_denom == FN_WEIGHT_DENOM_MINIMUM)
                 {
@@ -207,13 +212,17 @@ fn_exponential (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
                     for (i = nnn - 1; i > -1; i--)
                         if ((dist = sqrt(sqdst[i])) > 0)
                             break;
-                    if (dist > 0.0)
-                        rms_dist = dist;
-                    else
-                        rms_dist = lib_rms_dist;  /*safe fallback*/
+
+                    rms_dist = dist;
+                }
+                else if (l_fn_denom == FN_WEIGHT_DENOM_MAXIMUM)
+                {
+                    rms_dist = sqrt(sqdst[nnn-1]);
                 }
                 else return -1;   /*Incorrect value for l_fn_denom. Should not be possible*/
             }
+
+            /* Note: rms_dist is not always a root mean square distance. Can also be just one value or an average.*/
 
             if ((res = est_pre_val (rs, sqdst, nnn, pre_set->n_pre_val, p_pre_val, rms_dist)) != 0)
                 set_prediction_to_invalid (p_pre_val, pre_set->n_pre_val);
@@ -250,21 +259,28 @@ est_pre_val (Tpoint **rs, double *sqdst, int n, int n_pre_val, double *pre_val, 
         l_u     = (double *) realloc (l_u, n * sizeof(double));
         l_n_set = n;
     }
-    
-    if (rms_dist == 0.0)
-        rms_dist = 1.0; /*should not be possible*/
-    else if (rms_dist < SMALLEST_DISTANCE)
-        rms_dist = SMALLEST_DISTANCE;
-
-    mp = -l_exp_k / rms_dist;
 
     sum_u = 0.0;
 
-    for (i = 0; i < n; i++)
+    if (rms_dist < SMALLEST_DISTANCE)
     {
-        dist = sqrt (sqdst[i]);
-        l_u[i] = exp (mp * dist);
-        sum_u += l_u[i];
+        /* Nearest neighbors are all on almost exact same location*/
+        for (i = 0; i < n; i++)
+        {
+            l_u[i] = 1.0;
+            sum_u += l_u[i];
+        }
+    }
+    else
+    {
+        mp = -l_exp_k / rms_dist;
+
+        for (i = 0; i < n; i++)
+        {
+            dist = sqrt (sqdst[i]);
+            l_u[i] = exp (mp * dist);
+            sum_u += l_u[i];
+        }
     }
 
     if (sum_u == 0.0)

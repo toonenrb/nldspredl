@@ -9,7 +9,7 @@
 
 #include "fn.h"
 
-typedef enum { FN_WEIGHT_DENOM_MINIMUM, FN_WEIGHT_DENOM_AVG_NN, FN_WEIGHT_DENOM_AVG_LIB } Tfn_denom;
+typedef enum { FN_WEIGHT_DENOM_MINIMUM, FN_WEIGHT_DENOM_AVG_NN, FN_WEIGHT_DENOM_AVG_LIB, FN_WEIGHT_DENOM_MAXIMUM } Tfn_denom;
 
 int
 init_fn_exponential (Tnew_fn_params *new_fn_params,
