@@ -202,7 +202,7 @@ fn_exponential (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
                     /* Calculate mean distance between target and neighbors*/
                     mean_dist = 0.0;
                     for (i = 0; i < nnn; i++)
-                        mean_dist += (sqrt(sqdst[i] - mean_dist) / (i + 1));
+                        mean_dist += (sqrt(sqdst[i]) - mean_dist) / (i + 1);
 
                     rms_dist = mean_dist;
                 }
