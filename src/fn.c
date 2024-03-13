@@ -79,9 +79,9 @@ log_nn (Tpoint *target, Tpoint **rs, double *sqdst, int n)
 }
 
 int
-log_predicted (Tpoint **pt, int n, int n_val, double *pre_val)
+log_predicted (Tpoint **pt, int n, int n_val, double *pre_val, int *status)
 {
-    int    i, j;
+    int    i, j, *s;
     double *p;
     static struct s_log_tg2 log_tg2;
     static struct s_log_pd log_pd;
@@ -97,6 +97,7 @@ log_predicted (Tpoint **pt, int n, int n_val, double *pre_val)
         return 2;
 
     p = pre_val;
+    s = status;
     for (i = 0; i < n; i++)
     {
         log_tg2.target_num = (*pt)->vec_num;
@@ -106,12 +107,17 @@ log_predicted (Tpoint **pt, int n, int n_val, double *pre_val)
         for (j = 0; j < n_val; j++)
         {
             log_pd.pre_val_num = j;
-            log_pd.pre_val     = *p;                 /*predicted*/
+            log_pd.pre_val     = *p++;               /*predicted*/
             log_pd.obs_val     = (*pt)->pre_val[j];  /*observed*/
+            if (status)
+                log_pd.status = *s++;
+            else 
+                log_pd.status = 0;
             LOGREC(LOG_PD, &log_pd, sizeof (log_pd), &meta_log_pd);
-            p++;
         }
 
         pt++;
     }
+
+    return 0;
 }

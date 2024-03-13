@@ -237,7 +237,7 @@ fn_exponential (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
 
     free (rs); free (sqdst);
 
-    log_predicted (pre_set->point, pre_set->n_point, pre_set->n_pre_val, l_pre_val);
+    log_predicted (pre_set->point, pre_set->n_point, pre_set->n_pre_val, l_pre_val, NULL);
 
     fflush (g_log_file);
 

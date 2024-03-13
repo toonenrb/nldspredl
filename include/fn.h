@@ -22,6 +22,6 @@ int
 log_nn (Tpoint *target, Tpoint **rs, double *sqdst, int n);
 
 int
-log_predicted (Tpoint **pt, int n, int n_val, double *pre_val);
+log_predicted (Tpoint **pt, int n, int n_val, double *pre_val, int *status);
 
 #endif

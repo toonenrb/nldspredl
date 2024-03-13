@@ -116,6 +116,7 @@ new_fn_params_tls (int e, void **fn_params)
 }
 
 static double *l_pre_val = NULL;
+static int    *l_status = NULL;
 
 int
 next_fn_params_tls (void **fn_params)
@@ -135,6 +136,9 @@ next_fn_params_tls (void **fn_params)
         if (l_pre_val)
             free (l_pre_val);
         l_pre_val = NULL;
+
+        if (l_status)
+            free (l_status);
 
         free_tls ();
 
@@ -298,6 +302,8 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
         p1_aug_mat++;
     }
 
+    /* TODO check if n == 0 */
+
     if (center) /*subtract means from columns*/
     {
         p1_aug_mat = aug_mat + ldc; /*the constants column is not centered.*/
@@ -424,6 +430,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
     Tpoint   **ptarget;
     Tpoint   **rs;       /*result set*/
     double   *means = NULL;
+    int      *p_status;
 
     e         = pre_set->e;
     n_pre_val = pre_set->n_pre_val;
@@ -439,6 +446,11 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
     if (l_pre_val)
         free (l_pre_val);
     l_pre_val = (double *) malloc (pre_set->n_point * n_pre_val * sizeof(double));
+
+    /* Array to hold status values */
+    if (l_status)
+        free (l_status);
+    l_status = (int *) calloc (pre_set->n_point * n_pre_val,  sizeof(int));
 
     aug_n_col = e + 1 + n_pre_val;
 
@@ -464,6 +476,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
 
 
     p_pre_val = l_pre_val;
+    p_status = l_status;
     for (ptarget = pre_set->point; ptarget < pre_set->point + pre_set->n_point; ptarget++)
     {
         if (l_nnn > 0)
@@ -480,7 +493,11 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
         if (aug_n_points == 0)
         {
             for (i = 0; i < n_pre_val; i++)
+            {
                 *p_pre_val++ = NAN;
+                *p_status++ = STLS_AUG_N_POINTS_ZERO;
+            }
+
             continue;
         }
 
@@ -488,19 +505,36 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
         /* TLS */
         if ((ierr = tls (aug_mat, ldc, aug_n_points, e + 1, n_pre_val, &p1_x, &ldx, &ierr, &iwarn)) != 0)
         {
-            fprintf (stderr, "Error in TLS estimation <%d>.\n", ierr);
+            /* fprintf (stderr, "Error in TLS estimation <%d>.\n", ierr); */
             for (i = 0; i < n_pre_val; i++)
+            {
                 *p_pre_val++ = NAN;
+
+                if (ierr >= 1000)
+                    *p_status++ = (ierr - 1000) * 0x2000 + iwarn * 0x0100 + STLS_ERROR;
+                else
+                    *p_status++ = ierr * 0x2000 + iwarn * 0x0100 + STLS_ERROR;
+            }
+
             continue;
         }
-
-        if (iwarn > 0) n_warn++;
 
         if (l_warn_is_error && iwarn > 0)
         {
             for (i = 0; i < n_pre_val; i++)
+            {
                 *p_pre_val++ = NAN;
+                *p_status++ = iwarn * 0x0100 + STLS_WARN_IS_ERROR;
+            }
+
             continue;
+        }
+
+        if (iwarn > 0)
+        {
+            n_warn++;
+            for (j = 0; j < n_pre_val; j++)
+                *(p_status + j) = iwarn * 0x0100 + STLS_WARNING;
         }
 
         log_var_params (*ptarget, e, n_pre_val, ldx, p1_x, l_center, means);
@@ -514,7 +548,10 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
                     *p_pre_val += ((*ptarget)->co_val[j] - means[j]) * p1_x[j+1];
                 if (l_restrict_prediction > 0.0 &&
                         (*p_pre_val > l_restrict_prediction || *p_pre_val < -l_restrict_prediction))
+                {
                     *p_pre_val = NAN;
+                    *p_status++ |= STLS_VAL_GT_RESTRICT;
+                }
                 p_pre_val++;
                 p1_x += ldx;
             }
@@ -528,7 +565,10 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
                     *p_pre_val += (*ptarget)->co_val[j] * p1_x[j+1];
                 if (l_restrict_prediction > 0.0 &&
                         (*p_pre_val > l_restrict_prediction || *p_pre_val < l_restrict_prediction))
+                {
                     *p_pre_val = NAN;
+                    *p_status++ |= STLS_VAL_GT_RESTRICT;
+                }
                 p_pre_val++;
                 p1_x += ldx;
             }
@@ -538,7 +578,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
     if (n_warn > 0)
         fprintf (stderr, "Warning: %d warnings in tls procedure.\n", n_warn);
 
-    log_predicted (pre_set->point, pre_set->n_point, pre_set->n_pre_val, l_pre_val);
+    log_predicted (pre_set->point, pre_set->n_point, pre_set->n_pre_val, l_pre_val, l_status);
 
     if (l_nnn > 0)
     {

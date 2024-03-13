@@ -29,4 +29,19 @@ typedef struct
     bool    center;
 } Tfn_params_tls;
 
+/* Status values for pd.status field in logging.
+ * bit 0 - 7:  general status codes
+ * bit 8 - 9:  iwarn output
+ * bit 10 - 12: ierr output
+ * bit 13 - 15: info output from dsvdc.f
+ */
+typedef enum {
+  STLS_OK                        = 0x0000,
+  STLS_AUG_N_POINTS_ZERO         = 0x0001,
+  STLS_WARNING                   = 0x0002,
+  STLS_ERROR                     = 0x0004,
+  STLS_WARN_IS_ERROR             = 0x0008,
+  STLS_VAL_GT_RESTRICT           = 0x0010
+} Tstatus_tls;
+
 #endif
