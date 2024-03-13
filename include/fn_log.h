@@ -67,7 +67,7 @@ struct s_log_pd {
 };
 
 #define ATTACH_META_PD(_m, _s) \
-static Trec_meta _m = { LOG_PD, "PD", 3, &_s, \
+static Trec_meta _m = { LOG_PD, "PD", 4, &_s, \
     { \
         { "pd_pre_val_num", FT_INT, -1, &_s.pre_val_num }, \
         { "pd_pre_val", FT_DOUBLE, -1, &_s.pre_val }, \
