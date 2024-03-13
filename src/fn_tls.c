@@ -511,9 +511,9 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
                 *p_pre_val++ = NAN;
 
                 if (ierr >= 1000)
-                    *p_status++ = (ierr - 1000) * 0x2000 + iwarn * 0x0100 + STLS_ERROR;
+                    *p_status++ = (ierr - 1000) * 0x2000 | iwarn * 0x0100 | STLS_ERROR;
                 else
-                    *p_status++ = ierr * 0x2000 + iwarn * 0x0100 + STLS_ERROR;
+                    *p_status++ = ierr * 0x2000 | iwarn * 0x0100 | STLS_ERROR;
             }
 
             continue;
@@ -524,7 +524,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
             for (i = 0; i < n_pre_val; i++)
             {
                 *p_pre_val++ = NAN;
-                *p_status++ = iwarn * 0x0100 + STLS_WARN_IS_ERROR;
+                *p_status++ = iwarn * 0x0100 | STLS_WARN_IS_ERROR;
             }
 
             continue;
@@ -534,7 +534,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
         {
             n_warn++;
             for (j = 0; j < n_pre_val; j++)
-                *(p_status + j) = iwarn * 0x0100 + STLS_WARNING;
+                *(p_status + j) = iwarn * 0x0100 | STLS_WARNING;
         }
 
         log_var_params (*ptarget, e, n_pre_val, ldx, p1_x, l_center, means);
@@ -550,8 +550,9 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
                         (*p_pre_val > l_restrict_prediction || *p_pre_val < -l_restrict_prediction))
                 {
                     *p_pre_val = NAN;
-                    *p_status++ |= STLS_VAL_GT_RESTRICT;
+                    *p_status |= STLS_VAL_GT_RESTRICT;
                 }
+                p_status++;
                 p_pre_val++;
                 p1_x += ldx;
             }
@@ -567,8 +568,9 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
                         (*p_pre_val > l_restrict_prediction || *p_pre_val < l_restrict_prediction))
                 {
                     *p_pre_val = NAN;
-                    *p_status++ |= STLS_VAL_GT_RESTRICT;
+                    *p_status |= STLS_VAL_GT_RESTRICT;
                 }
+                p_status++;
                 p_pre_val++;
                 p1_x += ldx;
             }
