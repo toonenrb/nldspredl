@@ -408,10 +408,13 @@ free_tls (void)
         free (l_x);
     if (l_wrk)
         free (l_wrk);
+    if (l_status)
+        free (l_status);
 
-    l_s   = NULL;
-    l_x   = NULL;
-    l_wrk = NULL;
+    l_s      = NULL;
+    l_x      = NULL;
+    l_wrk    = NULL;
+    l_status = NULL;
 
     if (l_shortest_dist)
         free (l_shortest_dist);
