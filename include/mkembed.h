@@ -7,6 +7,8 @@
 #ifndef MKEMBED_H
 #define MKEMBED_H
 #include "embed.h"
+#include "tsdat.h"
+#include "tstoembdef.h"
 
 Tembed *
 create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num);
