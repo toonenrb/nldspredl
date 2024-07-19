@@ -37,15 +37,17 @@ struct s_log_embpar2 {
     int     coord;
     char    var_name[21];
     int     lag;
+    int     var_no;
 };
 
 #define ATTACH_META_EMBPAR2(_m, _s) \
-static Trec_meta _m = { LOG_EMBPAR2, "EMBPAR2", 4, &_s, \
+static Trec_meta _m = { LOG_EMBPAR2, "EMBPAR2", 5, &_s, \
     { \
         { "embpar2_copr", FT_CHAR, -1, &_s.copr }, \
         { "embpar2_coord", FT_INT, -1, &_s.coord }, \
         { "embpar2_var_name", FT_STRING, 21, &_s.var_name }, \
-        { "embpar2_lag", FT_INT, -1, &_s.lag } \
+        { "embpar2_lag", FT_INT, -1, &_s.lag }, \
+        { "embpar2_var_no", FT_INT, -1, &_s.var_no } \
     } \
 }
 

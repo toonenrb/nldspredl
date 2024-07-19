@@ -11,7 +11,7 @@
 #include <float.h>
 #include <stdbool.h>
 #include <math.h>
-#include "heap.h"
+/*#include "heap.h" replaced by qsort*/
 #include "kdt.h"
 
 typedef struct
@@ -26,21 +26,43 @@ TkdtNode * kdbranch (Tsorted ***, int, int, long, int);
 int nnf (void *, TkdtNode *, int, int, void *[], double *, double *, double *, bool *,
          double * (*)(void *), bool (*)(void *, void *), bool);
 
+#if 0
 double compare (Tsorted *a, Tsorted *b)  /*to pass to heapsort*/
 {
     return ((Tsorted *)a)->val - ((Tsorted *)b)->val;
 }
+#endif
+
+int compare_sorted (const void *a, const void *b)  /*to pass to qsort*/
+{
+    double x = (*(Tsorted **) a)->val;
+    double y = (*(Tsorted **) b)->val;
+
+    if (x > y)
+        return 1;
+    else if (x < y)
+        return -1;
+
+    return 0;
+}
 
 /* kdtree: make balanced k-d tree for array of pointers to objects containing type double position vectors */
+/* p: an array of pointers to objects, which contain a vector.
+ * n: the size of p.
+ * k: the dimension of the vector in the objects.
+ * getvec: a function that extracts the k-dimensional vector from the object.
+ */
 TkdtNode *kdtree (void *p[], long n, int k, double * (*getvec)(void *))
 {
-    int      d, res;
-    long     i;
+    int      d;
+    long     i, j;
     Tsorted  ***sl; /* sortlist points to array of k pointers to n-dimensional sort structs array */
     Tsorted  **Ps;
     Tsorted  *Psh;  /* assist in assigning values to pointers */
     void     *Po;
     TkdtNode *Pnd;
+    long     n_valid; /*number of valid objects (without NA's)*/
+    double   *vec;
 
     if (n <= 0)
         return NULL;
@@ -60,27 +82,44 @@ TkdtNode *kdtree (void *p[], long n, int k, double * (*getvec)(void *))
     }
 
     /* Fill the sort structures with coordinate values for each dimension */
+    n_valid = 0;
     for (i = 0; i < n; i++)
     {
+        Po = *(p + i);
+        vec = getvec (Po);
+
+        /* Check for NA's*/
+        for (j = 0; j < k; j++)
+            if (isnan(vec[j]))
+                break;
+
+        if (j < k)
+            continue;
+
         for (d = 0; d < k; d++)
         {
-            Psh = *(*(sl + d) + i);
-            Po = *(p + i);
+            Psh = *(*(sl + d) + n_valid);
             Psh->obj = Po;
-            Psh->vec = getvec (Po);
+            Psh->vec = vec;
             Psh->val = *(Psh->vec + d);
-            Psh->id  = i;
+            Psh->id  = n_valid; /*Was i. Check if this goes well*/
         }
+
+        n_valid++;
     }
+
     /* Sort the arrays with pointers to vectors */
     for(d = 0; d < k; d++)
     {
-        if ((res = heapsort( (void **) *(sl+d), n, (double (*)(void *, void *)) compare )) < 0)
+#if 0
+        if ((res = heapsort( (void **) *(sl+d), n_valid, (double (*)(void *, void *)) compare )) < 0)
             return NULL;
+#endif
+        qsort (*(sl+d), n_valid, sizeof(Tsorted *), compare_sorted);
     }
 
     /* And build the tree */
-    Pnd = kdbranch (sl, 0, k, n, 0);
+    Pnd = kdbranch (sl, 0, k, n_valid, 0);
 
     /* Release the sort structures */
     for (d = 0; d < k; d++)
@@ -281,6 +320,7 @@ int nnf (void *tgob /*target obj*/, TkdtNode *nd, int k, int n, void *rs[], doub
         if (i > 0)
         {
             if (!(object_only_once && *(rs + i - 1) == nd->obj))
+            {
                 for (j = 0; j < i; j++)
                 {
                     if (j == (i - 1))
@@ -294,6 +334,7 @@ int nnf (void *tgob /*target obj*/, TkdtNode *nd, int k, int n, void *rs[], doub
                         *(rs + j)    = *(rs + j + 1);
                     }
                 }
+            }
         }
     }
 
@@ -331,13 +372,31 @@ int nnf (void *tgob /*target obj*/, TkdtNode *nd, int k, int n, void *rs[], doub
 static double *l_hr_l = NULL, *l_hr_h = NULL;  /*hyperrectangle boundaries*/
 static int    l_k_al = 0;
 
+/* kdt_nn: Find n nearest neighbors, with the possibility of providing a function to exclude
+ *         some objects from the result set.
+ *
+ * tgob: the target object.
+ * nd: the node where the search will start (usually the root).
+ * k: the dimension of the space.
+ * n: the number of nearest neighbors to return.
+ * rs: the result set, consisting of pointers to objects. Length = n. Allocation in calling function.
+ *     If such a pointer is NULL, there were no more objects.
+ * sqdst: an array of length n, containing the square distances to tgob  of the objects in 
+ *        the result set. Allocation in calling function.
+ * getvec: function that retrieves the vector from the object.
+ * exclude: function that excludes objects, based upon their relation to the target.
+ * object_only_once: If the tree contains nodes that point to the same object, only one of
+ *                   those nodes will be selected.
+ * Returns: the number of nodes found.
+ */
 int kdt_nn (void *tgob /*target obj*/, TkdtNode *nd, int k, int n /*n nearest neighb.*/, 
             void *rs[], double *sqdst,
             double * (*getvec)(void *), bool (*exclude)(void *, void *),
             bool object_only_once)
 {
-    int i;
-    bool       bwb = false;
+    int  i;
+    int  n_missing;
+    bool bwb = false;
 
     if (k != l_k_al)
     {
@@ -357,8 +416,72 @@ int kdt_nn (void *tgob /*target obj*/, TkdtNode *nd, int k, int n /*n nearest ne
         *(sqdst + i) = DBL_MAX;
         *(rs + i)    = NULL;
     }
-    return nnf (tgob, nd, k, n, rs, sqdst, l_hr_l, l_hr_h, &bwb,
-                 (double * (*)(void *)) getvec, (bool (*)(void *, void *)) exclude, object_only_once);
+
+    nnf (tgob, nd, k, n, rs, sqdst, l_hr_l, l_hr_h, &bwb,
+          (double * (*)(void *)) getvec, (bool (*)(void *, void *)) exclude, object_only_once);
+
+    for (n_missing = 0; n_missing < n; n_missing++)
+        if (rs[n_missing])
+            break;
+
+    return n - n_missing;
+
+}
+
+int insert_node (TkdtNode *node, TkdtNode *branch, int k)
+{
+    if (node->vec[branch->dm] < branch->val)
+    {
+        if (branch->l)
+            return insert_node (node, branch->l, k);
+        else
+            branch->l = node;
+    }
+    else
+    {
+        if (branch->r)
+            return insert_node (node, branch->r, k);
+        else
+            branch->r = node;
+    }
+
+    node->dm = (branch->dm + 1) % k;
+    node->val = node->vec[node->dm];
+
+    return 0; 
+}
+
+/* kdt_insert: Insert a node in an existing tree */
+int kdt_insert (void *obj, TkdtNode *nd, int k, double * (*getvec)(void *))
+{
+    TkdtNode *ndi;
+    double   *vec;
+    int i;
+
+    if (obj == NULL)
+        return -1;
+
+    if (nd == NULL)
+        return -2;
+
+    vec = getvec(obj);
+    if (vec == NULL)
+        return -3;
+
+    for (i = 0; i < k; i++)
+    {
+        if (isnan(vec[i]))
+            return -4;
+    }
+
+    /* Create the node.*/
+    ndi = (TkdtNode *) malloc(sizeof(TkdtNode));
+    ndi->l = NULL;
+    ndi->r = NULL;
+    ndi->vec = vec;
+    ndi->obj = obj;
+
+    return (insert_node (ndi, nd, k));
 }
 
 void free_kdt (TkdtNode *nd)

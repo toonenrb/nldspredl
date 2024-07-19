@@ -5,10 +5,10 @@
  */
 
 #include <string.h>
-#include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <math.h>
+#include <limits.h>
 
 #include "tsdat.h"
 #include "tstoembdef.h"
@@ -32,10 +32,12 @@ Tembed *
 create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
 {
     Tembed  *emb;
-    int     i, j;
-    long    vec_num = 0;
-    int     max_lag, min_lag, range, n_max, zero_begin_offset, zero_end_offset, var_no;
-    int     rows_malloc, rows_avail, ncol;
+    long    i;
+    int     j;
+    long    vec_num = 0, n_max;
+    int     max_lag, min_lag, span, zero_begin_offset, var_no, rows_malloc;
+    long    rows_avail;
+    int     ncol;
     double  **co_lag_mapper, **pre_lag_mapper, *curr_co_val, *curr_pre_val;
     double  **addit_lag_mapper = NULL, *curr_addit_val;
     double  **bundle_mapper = NULL, *curr_bundle_val;
@@ -47,6 +49,24 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
         return NULL;
 
     emb = (Tembed *) calloc (1, sizeof(Tembed));
+
+    emb->emb_num         = emb_num;
+
+    emb->co_val_mat         = NULL;
+    emb->pre_val_mat        = NULL;
+    emb->bundle_mat         = NULL;
+    emb->addit_mat          = NULL;
+    emb->t_co_mat           = NULL;
+    emb->t_pre_mat          = NULL;
+    emb->t_addit_mat        = NULL;
+    emb->id                 = NULL;
+    emb->id_arr             = NULL;
+    emb->id_start_row       = NULL;
+    emb->vec_num            = NULL;
+    emb->use_in_lib         = NULL;
+    emb->use_in_pre         = NULL;
+    emb->range_dim          = NULL;
+    emb->range_tau          = NULL;
 
     create_meta (emb, eld, fdat); /*e, n_pre_val, n_bundle_val, co_meta, pre_meta, bundle_meta*/
     
@@ -67,11 +87,18 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
     for (i = 0; i < emb->n_addit_val; i++)
         if (emb->addit_meta[i].lag < min_lag) min_lag = emb->addit_meta[i].lag;
 
-    range = max_lag - min_lag + 1;
-    n_max = fdat->n_dat - range + 1;
+    span = max_lag - min_lag + 1;
+    n_max = fdat->n_dat - span + 1;
 
+    if (n_max < 1)
+    {
+        free_embed (emb);
+        return NULL;
+    }
+
+    emb->span = span;
+    
     zero_begin_offset = max_lag;
-    zero_end_offset   = zero_begin_offset + n_max - 1;
 
     /* Create arrays of pointers to travel through time series and create embedding.*/
     t_mapper = (long **) malloc(emb->e * sizeof(long *));
@@ -88,6 +115,7 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
         for (var_no = 0; var_no < fdat->n_col; var_no++)
             if (strcmp (fdat->lab[var_no], emb->co_meta[i].var_name) == 0) break;
 
+        emb->co_meta[i].var_no = var_no;
         co_lag_mapper[i] = fdat->dat + (zero_begin_offset - emb->co_meta[i].lag) * fdat->n_col + var_no;
     }
 
@@ -97,6 +125,7 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
         for (var_no = 0; var_no < fdat->n_col; var_no++)
             if (strcmp (fdat->lab[var_no], emb->pre_meta[i].var_name) == 0) break;
 
+        emb->pre_meta[i].var_no = var_no;
         pre_lag_mapper[i] = fdat->dat + (zero_begin_offset - emb->pre_meta[i].lag) * fdat->n_col + var_no;
     } 
 
@@ -111,6 +140,7 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
         for (var_no = 0; var_no < fdat->n_col; var_no++)
             if (strcmp(fdat->lab[var_no], emb->addit_meta[i].var_name) == 0) break;
 
+        emb->addit_meta[i].var_no = var_no;
         addit_lag_mapper[i] = fdat->dat + (zero_begin_offset - emb->addit_meta[i].lag) * fdat->n_col + var_no;
     } 
 
@@ -123,48 +153,45 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
 
     if (emb->n_bundle_val)
         bundle_mapper = (double **) malloc (emb->n_bundle_val * sizeof(double *));
+
     for (i = 0; i < emb->n_bundle_val; i++)
     {
         for (var_no = 0; var_no < fdat->n_bundle_col; var_no++)
             if (strcmp (fdat->bundle_lab[var_no], emb->bundle_meta[i].var_name) == 0) break;
 
+        emb->bundle_meta[i].var_no = var_no;
         bundle_mapper[i] = fdat->bundle + zero_begin_offset * fdat->n_bundle_col + var_no;
     } 
 
-    /* Create embedding */
-    emb->co_val_mat  = NULL;
-    emb->pre_val_mat = NULL;
-    emb->bundle_mat  = NULL;
-    emb->addit_mat   = NULL;
-    emb->t_mat       = NULL;
-    emb->t_pre_mat   = NULL;
-    emb->t_addit_mat = NULL;
-    emb->id          = NULL;
-    emb->id_arr      = NULL;
-    emb->vec_num     = NULL;
-    emb->use_in_lib  = NULL;
-    emb->use_in_pre  = NULL;
-    emb->n_row       = 0;
-    emb->emb_num     = emb_num;
-    rows_malloc = 200;
-    rows_avail  = 0;
-    ncol        = fdat->n_col;
-    id_val      = id_val_init;
+    emb->n_row     = 0;
+    rows_malloc    = 200;
+    rows_avail     = 0;
+    ncol           = fdat->n_col;
+    id_val         = id_val_init;
 
     for (i = 0; i < n_max; i++)
     {
-        /*check data*/
-        for (j = 0; j < emb->e; j++)
-            if (isnan (*co_lag_mapper[j])) goto next_shift;   /*next_shift: continues outer loop*/
-        for (j = 0; j < emb->n_pre_val; j++)
-            if (isnan (*pre_lag_mapper[j])) goto next_shift;
-        /*note: values in addit_mat are allowed to be NaN*/
 
-        /* All id's within range should be the same. */
+        /* All id's within span should be the same. */
         /* TS data should be ordered: id first, then time value. */
         if (id_mapper)
             if (strcmp (*(id_mapper - max_lag), *(id_mapper - min_lag)) != 0) 
                 goto next_shift;
+
+#if 0
+        fprintf (stdout, "co_val ");
+        for (j = 0; j < emb->e; j++)
+            fprintf (stdout, "<%d> <%f>, ", j, *co_lag_mapper[j]);
+        fprintf(stdout,"\npre_val ");
+        for (j = 0; j < emb->n_pre_val; j++)
+            fprintf (stdout, "<%d> <%f>, ", j, *pre_lag_mapper[j]);
+        fprintf(stdout,"\n");
+#endif
+
+        for (j = 0; j < emb->e; j++)
+            if (isnan (*co_lag_mapper[j])) goto next_shift;   /*next_shift: continues outer loop*/
+        for (j = 0; j < emb->n_pre_val; j++)
+            if (isnan (*pre_lag_mapper[j])) goto next_shift;   /*next_shift: continues outer loop*/
 
         if (emb->n_row == rows_avail) /*end of available space reached, increase space*/
         {
@@ -187,9 +214,9 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
                 curr_t_addit_val = emb->t_addit_mat + emb->n_row * emb->n_addit_val;
             }
 
-            emb->t_mat = (long *)
-                realloc (emb->t_mat, (rows_avail + rows_malloc) * emb->e * sizeof(long));
-            curr_t_val = emb->t_mat + emb->n_row * emb->e;
+            emb->t_co_mat = (long *)
+                realloc (emb->t_co_mat, (rows_avail + rows_malloc) * emb->e * sizeof(long));
+            curr_t_val = emb->t_co_mat + emb->n_row * emb->e;
 
             emb->t_pre_mat = (long *)
                 realloc (emb->t_pre_mat, (rows_avail + rows_malloc) * emb->n_pre_val * sizeof(long));
@@ -237,13 +264,15 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
                 emb->id[emb->n_id] = (char *) malloc ((strlen(*id_mapper) + 1) * sizeof(char));
                 strcpy (emb->id[emb->n_id], *id_mapper);
                 id_val = emb->id[emb->n_id];
+                emb->id_start_row = (long *) realloc (emb->id_start_row, (emb->n_id + 1) * sizeof(long));
+                emb->id_start_row[emb->n_id] = emb->n_row;
                 emb->n_id++;
             }
         }
 
 
         for (j = 0; j < emb->e; j++)
-            *curr_co_val++ = *co_lag_mapper[j];
+              *curr_co_val++ = *co_lag_mapper[j];
 
         for (j = 0; j < emb->e; j++)
             *curr_t_val++ = *t_mapper[j];
@@ -315,6 +344,12 @@ create_embed (Tfdat *fdat, Temb_lag_def *eld, int emb_num)
     log_emb_par (emb);
     log_emb_vec (emb);
 
+    if (emb->n_row == 0)
+    {
+        free_embed (emb);
+        return NULL;
+    }
+
     return emb;
 }
 
@@ -355,7 +390,7 @@ emb_label_add_lag (char *emb_label, char *var_name, int lag, bool first_of_group
 }
 
 char *
-emb_label_add_sep (char *emb_label, char *sep)
+emb_label_add_sep (char *emb_label, const char *sep)
 {
     if (!emb_label)
     {
@@ -400,7 +435,7 @@ create_meta (Tembed *emb, Temb_lag_def *eld, Tfdat *fdat)
     first_of_group = true;
     for (i = 0; i < eld->n_co_lag; i++)
     {
-        emb->co_meta[i].var_name = malloc ((strlen(eld->co_lag[i].var_name) + 1) * sizeof(char));
+        emb->co_meta[i].var_name = (char *) malloc ((strlen(eld->co_lag[i].var_name) + 1) * sizeof(char));
         strcpy (emb->co_meta[i].var_name, eld->co_lag[i].var_name);
         emb->co_meta[i].lag = eld->co_lag[i].lag;
         emb->emb_label = emb_label_add_lag (emb->emb_label, eld->co_lag[i].var_name, eld->co_lag[i].lag, first_of_group);
@@ -411,7 +446,7 @@ create_meta (Tembed *emb, Temb_lag_def *eld, Tfdat *fdat)
     first_of_group = true;
     for (i = 0; i < eld->n_pre_lag; i++)
     {
-        emb->pre_meta[i].var_name = malloc ((strlen(eld->pre_lag[i].var_name) + 1) * sizeof(char));
+        emb->pre_meta[i].var_name = (char *) malloc ((strlen(eld->pre_lag[i].var_name) + 1) * sizeof(char));
         strcpy (emb->pre_meta[i].var_name, eld->pre_lag[i].var_name);
         emb->pre_meta[i].lag = eld->pre_lag[i].lag;
         emb->emb_label = emb_label_add_lag (emb->emb_label, eld->pre_lag[i].var_name, eld->pre_lag[i].lag, first_of_group);
@@ -422,7 +457,7 @@ create_meta (Tembed *emb, Temb_lag_def *eld, Tfdat *fdat)
     first_of_group = true;
     for (i = 0; i < eld->n_addit_lag; i++)
     {
-        emb->addit_meta[i].var_name = malloc ((strlen(eld->addit_lag[i].var_name) + 1) * sizeof(char));
+        emb->addit_meta[i].var_name = (char *) malloc ((strlen(eld->addit_lag[i].var_name) + 1) * sizeof(char));
         strcpy (emb->addit_meta[i].var_name, eld->addit_lag[i].var_name);
         emb->addit_meta[i].lag = eld->addit_lag[i].lag;
         emb->emb_label = emb_label_add_lag (emb->emb_label, eld->addit_lag[i].var_name, eld->addit_lag[i].lag, first_of_group);
@@ -433,7 +468,7 @@ create_meta (Tembed *emb, Temb_lag_def *eld, Tfdat *fdat)
     first_of_group = true;
     for (i = 0; i < emb->n_bundle_val; i++)
     {
-        emb->bundle_meta[i].var_name = malloc ((strlen(fdat->bundle_lab[i]) + 1) * sizeof(char));
+        emb->bundle_meta[i].var_name = (char *) malloc ((strlen(fdat->bundle_lab[i]) + 1) * sizeof(char));
         strcpy (emb->bundle_meta[i].var_name, fdat->bundle_lab[i]);
         emb->emb_label = emb_label_add_lag (emb->emb_label, fdat->bundle_lab[i], INT_MAX, first_of_group);
         first_of_group = false;
@@ -513,7 +548,7 @@ free_embed (Tembed *emb)
 
     if (emb->id_arr) free (emb->id_arr);
 
-    if (emb->t_mat) free (emb->t_mat);
+    if (emb->t_co_mat) free (emb->t_co_mat);
     if (emb->t_pre_mat) free (emb->t_pre_mat);
     if (emb->t_addit_mat) free (emb->t_addit_mat);
 
@@ -597,6 +632,7 @@ log_emb_par (Tembed *emb)
         log_embpar2.coord     = i;
         strncpy (log_embpar2.var_name, emb->co_meta[i].var_name, 21);
         log_embpar2.lag       = emb->co_meta[i].lag;
+        log_embpar2.var_no    = emb->co_meta[i].var_no;
         LOGREC(LOG_EMBPAR2, &log_embpar2, sizeof (log_embpar2), &meta_log_embpar2);
     }
 
@@ -606,6 +642,7 @@ log_emb_par (Tembed *emb)
         log_embpar2.coord     = i;
         strncpy (log_embpar2.var_name, emb->pre_meta[i].var_name, 21);
         log_embpar2.lag       = emb->pre_meta[i].lag;
+        log_embpar2.var_no    = emb->pre_meta[i].var_no;
         LOGREC(LOG_EMBPAR2, &log_embpar2, sizeof (log_embpar2), &meta_log_embpar2);
     }
 
@@ -615,6 +652,7 @@ log_emb_par (Tembed *emb)
         log_embpar2.coord     = i;
         strncpy (log_embpar2.var_name, emb->addit_meta[i].var_name, 21);
         log_embpar2.lag       = emb->addit_meta[i].lag;
+        log_embpar2.var_no    = emb->addit_meta[i].var_no;
         LOGREC(LOG_EMBPAR2, &log_embpar2, sizeof (log_embpar2), &meta_log_embpar2);
     }
 
@@ -624,6 +662,7 @@ log_emb_par (Tembed *emb)
         log_embpar2.coord     = i;
         strncpy (log_embpar2.var_name, emb->bundle_meta[i].var_name, 21);
         log_embpar2.lag       = 0;
+        log_embpar2.var_no    = emb->bundle_meta[i].var_no;
         LOGREC(LOG_EMBPAR2, &log_embpar2, sizeof (log_embpar2), &meta_log_embpar2);
     }
 
@@ -661,7 +700,7 @@ log_emb_vec (Tembed *emb)
         return 2;
 
     id         = emb->id_arr;
-    t          = emb->t_mat;
+    t          = emb->t_co_mat;
     t_pre      = emb->t_pre_mat;
     t_addit    = emb->t_addit_mat;
     co_val     = emb->co_val_mat;
@@ -736,3 +775,4 @@ log_emb_vec (Tembed *emb)
     fflush (g_log_file);
     return 0;
 }
+

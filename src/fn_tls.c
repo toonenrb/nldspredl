@@ -9,7 +9,6 @@
 #include <math.h>
 #include <stdbool.h>
 #include <string.h>
-#include <float.h>
 
 #include "kdt.h"     //k-d tree implementation.
 #include "point.h"
@@ -17,6 +16,11 @@
 #include "fn_tls.h"
 #include "log.h"
 #include "fn_tls_log.h"
+/*#define TIMEMSGPRINT 1*/
+#include "printtm.h"
+
+#define XNN_MINIMAL_DISTANCE 1.0E-15
+#define XNN_SORT_CUTOFF 20
 
 static int    l_nnn = 0;    /* When greater than 0, TLS / SVD only done on l_nnn nearest neighbours (for large datasets) */
 static Texcl  l_excl;       /* How to exclude vectors from library, based upon predictor vector.*/
@@ -28,6 +32,7 @@ static double l_restrict_prediction;
 static Ttls_ref_meth l_ref_meth;
 static int    l_ref_xnn;
 static double *l_shortest_dist = NULL;
+static long   l_n_shortest_dist_alloc = 0;
 static bool   l_warn_is_error;
 static bool   l_object_only_once;
 
@@ -55,7 +60,7 @@ log_dtls (double tol1, double tol2, int ldx, int rank, int ierr,
           double *c, double *x, double *s);
 
 static void
-init_xnn (void);
+init_xnn (long);
 
 extern void
 dtls_ (double * aug_mat, int * ldc, int * n_points, int * n_a, int * n_b, 
@@ -64,11 +69,11 @@ dtls_ (double * aug_mat, int * ldc, int * n_points, int * n_a, int * n_b,
 
 int
 init_fn_tls (Tnew_fn_params *new_fn_params,
-                 Tnext_fn_params *next_fn_params,
-                 Tfn *fn,
-                 double theta_min, double theta_max, double delta_theta,
-                 int nnn, Texcl excl, int var_win, bool center, double restrict_prediction,
-                 bool warn_is_error, Ttls_ref_meth ref_meth, int ref_xnn, bool object_only_once)
+             Tnext_fn_params *next_fn_params,
+             Tfn *fn,
+             double theta_min, double theta_max, double delta_theta,
+             int nnn, Texcl excl, int var_win, bool center, double restrict_prediction,
+             bool warn_is_error, Ttls_ref_meth ref_meth, int ref_xnn, bool object_only_once)
 {
     l_nnn     = nnn;
     l_excl    = excl;
@@ -110,27 +115,29 @@ new_fn_params_tls (int e, void **fn_params)
 {
     exclude_init (l_excl, l_var_win, e);
     l_theta = l_theta_min - 1.0;
-    if (l_ref_meth == KTLS_REFMETH_XNN_GT_ZERO)
-        l_shortest_dist = (double *) realloc (l_shortest_dist, l_ref_xnn * sizeof (double));
     return next_fn_params_tls (fn_params);
 }
 
 static double *l_pre_val = NULL;
 static int    *l_status = NULL;
+#define THETA_MARGIN 1E-10
 
 int
 next_fn_params_tls (void **fn_params)
 {
     Tfn_params_tls *_fn_params;
 
-
     if (l_theta < l_theta_min)
         l_theta = l_theta_min;
     else
         l_theta += l_delta_theta;
 
-    if (l_theta > l_theta_max)
+
+    if (l_theta > l_theta_max + THETA_MARGIN)
     {
+
+        if (*fn_params)
+            free (*fn_params);
         *fn_params = NULL;
 
         if (l_pre_val)
@@ -139,6 +146,7 @@ next_fn_params_tls (void **fn_params)
 
         if (l_status)
             free (l_status);
+        l_status = NULL;
 
         free_tls ();
 
@@ -174,46 +182,97 @@ getdist (double *vec1, double *vec2, int e)
     return (sqrt (sqdist));
 }
 
-static void
-init_xnn (void)
-{
-    int i;
-    for (i = 0; i < l_ref_xnn; i++) l_shortest_dist[i] = DBL_MAX;
-}
+static long l_n_shortest_dist_added = 0;
 
 static void
-add_xnn (double d)  /*d >= 0.0*/
+init_xnn (long n_alloc)
 {
-    int i, j;
-    /*Note: extremely simple non optimised procedure.*/
-    if (d == 0.0)
-        return;
-    for (i = 0; i < l_ref_xnn; i++)
-        if (d > l_shortest_dist[i])
-            break;
-    if (i > 0)
+    long determined_n_alloc;
+
+    if (l_ref_xnn > XNN_SORT_CUTOFF)
+        determined_n_alloc = n_alloc;
+    else
+        determined_n_alloc = l_ref_xnn; /* Just keep the array sorted and do no sorting afterwards.*/
+
+    if (l_n_shortest_dist_alloc < determined_n_alloc)
     {
-        for (j = 0; j < i - 1; j++)
-            l_shortest_dist[j] = l_shortest_dist[j+1];
+        if (l_shortest_dist)
+        {
+            free (l_shortest_dist);
+            l_shortest_dist = NULL;
+        }
 
-        l_shortest_dist[i - 1] = d;
+        if (determined_n_alloc > 0)
+            l_shortest_dist = (double *) malloc (determined_n_alloc * sizeof (double));
+
+        l_n_shortest_dist_alloc = determined_n_alloc;
     }
 
+    l_n_shortest_dist_added = 0;
+}
+
+static inline void
+add_xnn (double d)  /*d >= 0.0*/
+{
+    if (d < XNN_MINIMAL_DISTANCE)
+        return;
+
+    if (l_ref_xnn > XNN_SORT_CUTOFF)
+        l_shortest_dist[l_n_shortest_dist_added++] = d; /* Sort when the value is needed.*/
+    else
+    {
+        /* Keep the list sorted.*/
+        long high, low = 0, mid, i;
+
+        high = l_n_shortest_dist_added;
+
+        /* Find index of value */
+        while (low < high)
+        {
+            mid = (low + high) >> 1;
+            if (l_shortest_dist[mid] < d)
+                low = mid + 1;
+            else
+                high = mid;
+        }
+
+        /* low now contains the position where d should be inserted.*/
+
+        if (low < l_n_shortest_dist_alloc)
+        {
+            if (l_n_shortest_dist_added > 0)
+            {
+                /* Shift the the greater values in the array to the right */
+                for (i = ((l_n_shortest_dist_added < l_n_shortest_dist_alloc)? l_n_shortest_dist_added: l_n_shortest_dist_alloc - 1); i > low; i--)
+                    l_shortest_dist[i] = l_shortest_dist[i-1];
+            }
+
+            l_shortest_dist[low] = d;
+
+            if (l_n_shortest_dist_added < l_n_shortest_dist_alloc)
+                l_n_shortest_dist_added++;
+        }
+
+    }
+     
     return;
 }
 
 static double
 get_xnn_ref_dst ()
 {
-    int i, n = 0;
+    int i;
     double val = 0.0;
-    for (i = l_ref_xnn - 1; i >= 0; i--)
-    {
-        if (l_shortest_dist[i] == DBL_MAX)
-            break;
+    int n = 0;
 
+    if (!l_n_shortest_dist_added)
+        return 0.0;
+
+    if (l_ref_xnn > XNN_SORT_CUTOFF)
+        qsort(l_shortest_dist, l_n_shortest_dist_added, sizeof (double), compare_double);
+
+    for (i = 0; i < ((l_n_shortest_dist_added < l_ref_xnn)? l_n_shortest_dist_added: l_ref_xnn); i++)
         val = (l_shortest_dist[i] - val) / ++n;
-    }
 
     return val;
 }
@@ -230,6 +289,9 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
     Tpoint   **p_pt;
     double   *p_mean;
     double   ref_dst;
+    double   invnp1;
+
+    TMMSG("fill_aug_mat: begin");
 
     aug_n_col = e + 1 + n_pre_val;
 
@@ -245,8 +307,33 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
         for (p_mean = means; p_mean < means + aug_n_col - 1; p_mean++)
             *p_mean = 0.0;
 
-    if (ref_meth == KTLS_REFMETH_XNN_GT_ZERO)
-        init_xnn ();
+#if 0
+    int j;
+    fprintf(stdout, "%ld: ", target->vec_num );
+    for(j=0;j<e;j++)
+        fprintf(stdout, "%f ", target->co_val[j]);
+    for(j=0;j<n_pre_val;j++)
+        fprintf(stdout, "%f ", target->pre_val[j]);
+    fprintf(stdout, "\n\n");
+
+    for(i=0;i<n_rs;i++)
+    {
+        fprintf(stdout, "%ld: ", rs[i]->vec_num );
+        for(j=0;j<e;j++)
+            fprintf(stdout, "%f ", rs[i]->co_val[j]);
+
+        for(j=0;j<n_pre_val;j++)
+            fprintf(stdout, "%f ", rs[i]->pre_val[j]);
+
+        fprintf(stdout, "\n");
+    }
+#endif
+
+    if (l_ref_meth == KTLS_REFMETH_XNN_GT_ZERO && !sqdst)
+        init_xnn (n_rs);
+
+
+    TMMSG("fill_aug_mat: before first loop");
 
     n = 0;
     for (p_pt = rs; p_pt < rs + n_rs; p_pt++)
@@ -259,14 +346,16 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
         }
         else
         {
-            if (target == *p_pt || exclude (target, *p_pt))
+            /*if (target == *p_pt || exclude (target, *p_pt))*/
+            if (exclude (target, *p_pt))
                 continue;
             *p_weight++ = dval =  getdist (target->co_val, (*p_pt)->co_val, e);
         }
 
-        avg_dst += (dval - avg_dst) / (n + 1);
+        invnp1 = 1.0 / (n + 1);
+        avg_dst += (dval - avg_dst) * invnp1;
 
-        if (ref_meth == KTLS_REFMETH_XNN_GT_ZERO)
+        if (ref_meth == KTLS_REFMETH_XNN_GT_ZERO && !sqdst)
             add_xnn (dval);
 
         /* copy vector and prediction values into augmented matrix */
@@ -276,16 +365,21 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
         *p2_aug_mat = 1.0;
         p2_aug_mat += ldc;
         p_mean = means; /*first column (of 1's) is not centered.*/
+
+        TMMSG("fill_aug_mat: before mean calculation A");
+
         for (p_vec = vec = (*p_pt)->co_val; p_vec < vec + e; p_vec++)
         {
             *p2_aug_mat = *p_vec;
             p2_aug_mat += ldc;
             if (center)
             {
-                *p_mean    += (*p_vec - *p_mean) / (n + 1);
+                *p_mean    += (*p_vec - *p_mean) * invnp1;
                 p_mean++;
             }
         }
+
+        TMMSG("fill_aug_mat: mean calculation B");
 
         for (p_vec = vec = (*p_pt)->pre_val; p_vec < vec + n_pre_val; p_vec++)
         {
@@ -293,14 +387,18 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
             p2_aug_mat += ldc;
             if (center)
             {
-                *p_mean    += (*p_vec - *p_mean) / (n + 1);
+                *p_mean    += (*p_vec - *p_mean) * invnp1;
                 p_mean++;
             }
         }
 
+        TMMSG("fill_aug_mat: after mean calculation");
+
         n++;
         p1_aug_mat++;
     }
+
+    TMMSG("fill_aug_mat: after first loop, before subtract means");
 
     /* TODO check if n == 0 */
 
@@ -315,17 +413,33 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
         }
     }
 
+    TMMSG("fill_aug_mat: after subtract means");
 
     /* Compute weights and apply to augmented matrix */
     ref_dst = avg_dst;
     if (ref_meth == KTLS_REFMETH_XNN_GT_ZERO)
     {
-        if ((ref_dst = get_xnn_ref_dst ()) == 0.0)
+        if (sqdst)  /* List of sorted square distances already available */
+        {
+            int counter = 0;
+
+            ref_dst = 0.0;
+            /* In sqdst, distances are ordered from large to small.
+             */
+            for (i = ((n_rs < l_ref_xnn)? 0: n_rs - l_ref_xnn); i < n_rs; i++)
+                ref_dst = (sqrt(sqdst[i]) - ref_dst) / ++counter;
+        }
+        else
+            ref_dst = get_xnn_ref_dst ();
+
+        if (ref_dst == 0.0)
         {
             fprintf (stdout, "Warning: reference distance is 0.0, switching to overall mean distance.\n");
             ref_dst = avg_dst;
         }
     }
+
+    TMMSG("fill_aug_mat: before weight calculations");
 
     fact = -1.0 * l_theta / ref_dst;
     for (p_weight = weight; p_weight < weight + n; p_weight++)
@@ -341,6 +455,9 @@ fill_aug_mat (double *aug_mat, Tpoint *target, Tpoint **rs, int n_rs, double *sq
 
         p1_aug_mat += ldc;
     }
+    TMMSG("fill_aug_mat: after weight calculations");
+
+    TMMSG("fill_aug_mat: end");
 
     return n;
 }
@@ -417,27 +534,31 @@ free_tls (void)
     l_status = NULL;
 
     if (l_shortest_dist)
+    {
         free (l_shortest_dist);
-
-    l_shortest_dist = NULL;
+        l_shortest_dist = NULL;
+        l_n_shortest_dist_alloc = 0;
+    }
 }
 
 int
 fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
 {
-    TkdtNode *tx;
-    double   *sqdst, *weight;
+    double   *sqdst, *sqdst_alloc, *weight;
     double   *p1_x, *aug_mat, *p_pre_val;
 //    double   *c, *p1_x, *aug_mat, *p_pre_val;
-    int      aug_n_col, aug_n_points, ldc, e, n_pre_val, i, j, ierr, iwarn, ldx, n_rs, n_warn;
+    int      aug_n_col, aug_n_points, ldc, e, n_pre_val, i, j, ierr, iwarn, ldx, n_warn;
+    long     n_rs, n_rs_alloc, n_rs_new;
     Tpoint   **ptarget;
-    Tpoint   **rs;       /*result set*/
+    Tpoint   **rs, **rs_alloc;       /*result set*/
     double   *means = NULL;
     int      *p_status;
 
     e         = pre_set->e;
     n_pre_val = pre_set->n_pre_val;
     n_warn = 0;
+
+    TMMSG("fn_tls: start");
 
     /* means contains the mean value per axis, over all vectors from the result set.
      * It is filled in fill_aug_matrix.
@@ -459,39 +580,66 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
 
     if (l_nnn > 0)
     {
-        rs     = (Tpoint **) malloc (l_nnn * sizeof (Tpoint *));
-        n_rs   = l_nnn;
-        ldc    = aug_n_col > n_rs? aug_n_col: n_rs;  /*leading dimension of aug_mat (column-first order)*/
+        rs = rs_alloc =  (Tpoint **) malloc (l_nnn * sizeof (Tpoint *));
+        n_rs = n_rs_alloc = l_nnn;
+        ldc        = aug_n_col > n_rs? aug_n_col: n_rs;  /*leading dimension of aug_mat (column-first order)*/
 
-        sqdst  = (double *) malloc (ldc * sizeof (double));
-        tx     = kdtree ((void **) lib_set->point, lib_set->n_point, e, (double * (*)(void *))get_co_vec);
+        sqdst  = sqdst_alloc = (double *) malloc (ldc * sizeof (double));
+        if (!lib_set->tx)
+            lib_set->tx = kdtree ((void **) lib_set->point, lib_set->n_point, e, (double * (*)(void *))get_co_vec);
     }
     else
     {
         sqdst    = NULL;
         rs       = lib_set->point;
         n_rs     = lib_set->n_point;
-        ldc    = aug_n_col > n_rs? aug_n_col: n_rs;  /*leading dimension of aug_mat (column-first order)*/
+        ldc      = aug_n_col > n_rs? aug_n_col: n_rs;  /*leading dimension of aug_mat (column-first order)*/
     }
 
     aug_mat = (double *) malloc (ldc * aug_n_col * sizeof(double));
     weight  = (double *) malloc (n_rs * sizeof (double));
 
-
     p_pre_val = l_pre_val;
     p_status = l_status;
+    TMMSG("fn_tls: before main loop");
     for (ptarget = pre_set->point; ptarget < pre_set->point + pre_set->n_point; ptarget++)
     {
         if (l_nnn > 0)
         {
+            TMMSG("fn_tls: before nnn find");
+
             /* Find nearest neighbours */
-            kdt_nn ((void *)(*ptarget), tx, lib_set->e, l_nnn, 
-                   (void **) rs, sqdst, (double * (*)(void *))get_co_vec, (bool (*)(void *, void *))exclude, l_object_only_once); 
-            log_nn (*ptarget, rs, sqdst, l_nnn);
+            n_rs_new = kdt_nn ((void *)(*ptarget), lib_set->tx, lib_set->e, l_nnn, 
+                               (void **) rs, sqdst, (double * (*)(void *))get_co_vec,
+                               (bool (*)(void *, void *))exclude, l_object_only_once); 
+
+            /* When kdt_nn returns a different number of neighbors than expected, we may have to
+             * adjust some parameters for the augmented matrix.
+             * The augmented matrix has already been allocated to its maximum needed size, 
+             * so no reallocation necessary.
+             */
+            if (n_rs_new != n_rs)
+            {
+                n_rs = n_rs_new;
+                ldc  = aug_n_col > n_rs? aug_n_col: n_rs;  /*leading dimension of aug_mat (column-first order)*/
+            }
+
+            /* The KDT algorithm (unfortunately) puts the smallest distance and corresponding point 
+             * at the end of the array. Unfilled positions occur at the start of the array.
+             */
+            rs = rs_alloc + n_rs_alloc - n_rs;
+            sqdst = sqdst_alloc + n_rs_alloc - n_rs;
+
+            TMMSG("fn_tls: after nnn find");
+
+            log_nn (*ptarget, rs, sqdst, n_rs /*l_nnn*/);
         }
 
+
+        TMMSG("fn_tls: before aug_mat fill");
         aug_n_points = fill_aug_mat (aug_mat, *ptarget, rs, n_rs, sqdst, weight,
                                      ldc, e, n_pre_val, means, l_center, l_ref_meth);
+        TMMSG("fn_tls: after aug_mat fill");
 
         if (aug_n_points == 0)
         {
@@ -504,8 +652,8 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
             continue;
         }
 
-
         /* TLS */
+        TMMSG("fn_tls: before tls");
         if ((ierr = tls (aug_mat, ldc, aug_n_points, e + 1, n_pre_val, &p1_x, &ldx, &ierr, &iwarn)) != 0)
         {
             /* fprintf (stderr, "Error in TLS estimation <%d>.\n", ierr); */
@@ -521,6 +669,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
 
             continue;
         }
+        TMMSG("fn_tls: after tls");
 
         if (l_warn_is_error && iwarn > 0)
         {
@@ -542,6 +691,7 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
 
         log_var_params (*ptarget, e, n_pre_val, ldx, p1_x, l_center, means);
 
+        TMMSG("fn_tls: before center");
         if (l_center)
         {
             for (i = 0; i < n_pre_val; i++)
@@ -578,7 +728,10 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
                 p1_x += ldx;
             }
         }
+        TMMSG("fn_tls: after center");
     }
+
+    TMMSG("fn_tls: after main loop");
 
     if (n_warn > 0)
         fprintf (stderr, "Warning: %d warnings in tls procedure.\n", n_warn);
@@ -589,8 +742,9 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
     {
         if (rs)
             free (rs);
-        if (tx)
-            free_kdt (tx);
+        /* When doing imputations, we reuse the same tree several times.
+         * The kdt-tree is now deallocated in the next_set method.
+         */
         if (sqdst)
             free (sqdst);
     }
@@ -605,6 +759,8 @@ fn_tls (Tpoint_set *lib_set, Tpoint_set *pre_set, double **predicted)
     fflush (g_log_file);
 
     *predicted = l_pre_val;
+
+    TMMSG("fn_tls: end");
 
     return 0;
 }
@@ -696,7 +852,6 @@ log_dtls (double tol1, double tol2, int ldx, int rank, int ierr,
     static struct s_log_dtlsav log_dtlsav;
     double *prow, *pval;
 
-    long row,col;
 #ifdef LOG_HUMAN
     ATTACH_META_DTLSO(meta_log_dtlso, log_dtlso);
     ATTACH_META_DTLSAN(meta_log_dtlsan, log_dtlsan);

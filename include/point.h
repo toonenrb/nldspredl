@@ -9,12 +9,15 @@
 
 #include <stdbool.h>
 
+#include "kdt.h"
+
+
 typedef struct
 {
     bool        use_in_lib;
     bool        use_in_pre;
     char        *id;         /*pointer into id's array of embedding*/
-    long        vec_num;     /*unique number for referencing*/
+    long        vec_num;     /*unique number for referencing. Equal to emb->vec_num[row]*/
     long        *t;          /*pointer into corresponding row in t matrix of embedding*/
     long        *t_pre;      /*pointer into corresponding row in t_pre matrix of embedding*/
     double      *co_val;     /*pointer into corresponding row in co_val matrix (coordinate values) of embedding*/
@@ -33,6 +36,7 @@ typedef struct
     int    n_bundle_val; /*dimension of bundle_val*/
     int    n_addit_val;  /*dimension of addit_val*/
     Tpoint **point;
+    TkdtNode *tx;        /*in case vectors are included in a kd tree*/
 } Tpoint_set;
 
 typedef enum { T_EXCL_NONE             = 0,    /*none*/
@@ -55,5 +59,11 @@ exclude_init (Texcl excl, int var_win, int e);
 
 bool 
 exclude (Tpoint *tg, Tpoint *cd);  /*exclude candidate from prediction set for target?*/
+
+int compare_point_vec_num (const void *a, const void *b);
+
+int compare_long (const void *a, const void *b);
+
+int compare_double (const void *a, const void *b);
 
 #endif

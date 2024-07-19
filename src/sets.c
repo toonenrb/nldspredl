@@ -21,11 +21,12 @@
 #include "sets.h"
 #include "log.h"
 #include "sets_log.h"
+#include "kdt.h"
 
 static Tembed        *l_emb;
 static Tpoint        *l_all_points = NULL;
 static int           l_set_num;
-static unsigned long l_n_points = 0;  /*Fix -Walloc_size.. warning of gcc*/
+static long          l_n_points = 0;  /*Fix -Walloc_size.. warning of gcc*/
 
 static Tpoint      **l_rnd_point_twice = NULL;
 static Tpoint      **l_all_point_twice = NULL;
@@ -105,8 +106,12 @@ free_sets (void)
         l_n_points   = 0;
     }
 
+
     if (l_lib_set)
     {
+        if (l_lib_set->tx)
+            free_kdt (l_lib_set->tx);
+    
         free (l_lib_set);
         l_lib_set = NULL;
     }
@@ -141,6 +146,7 @@ free_sets (void)
         l_co_var_num = NULL;
     }
 
+    return 0;
 }
 
 static short *
@@ -195,7 +201,7 @@ make_sets (Tembed *emb, Tbundle_set *bundle_set)
 
     id           = emb->id_arr;
     vec_num      = emb->vec_num;
-    t            = emb->t_mat;
+    t            = emb->t_co_mat;
     t_pre        = emb->t_pre_mat;
     co_val       = emb->co_val_mat;
     pre_val      = emb->pre_val_mat;
@@ -275,15 +281,18 @@ init_set (Tembed *emb)
     set->n_point     = emb->n_row;
     set->set_num     = -1;
     set->n_addit_val = emb->n_addit_val;
+    set->tx          = NULL;
 
     return set;
 }
 
 static int
-shrink_points (Tpoint_set *set, int n)
+shrink_points (Tpoint_set *set, long n)
 {
     set->point = (Tpoint **) realloc (set->point, n * sizeof (Tpoint *));
     set->n_point = n;
+
+    return 0;
 }
 
 
@@ -299,6 +308,8 @@ shuffle (int n, int *values)
         values[i] = values[j];
         values[j] = swap;
     }
+
+    return 0;
 }
 
 int
@@ -322,10 +333,10 @@ fill_rnd_point_twice (Tpoint ** rnd_point_twice, Tpoint *all_points, int n_point
 }
 
 /* convergence graph methods *******************************************/
-static int              l_lib_size_min, l_lib_size_max, l_lib_inc, l_lib_inc_start, l_n_bootstrap;
+static long             l_lib_size_min, l_lib_size_max, l_lib_inc, l_lib_inc_start, l_n_bootstrap;
 static float            l_lib_inc_inc_factor, l_f_lib_inc;
 static Tlib_shift_meth  l_lib_shift_meth;
-static int              l_lib_size = 0, l_lib_shift = 0, l_shift, l_i_boot = 0;
+static long             l_lib_size = 0, l_lib_shift = 0, l_shift, l_i_boot = 0;
 static int              l_permut_swaps;
 
 int
@@ -348,11 +359,11 @@ init_set_convergent_lib (int lib_size_min, int lib_size_max, int lib_inc, float 
     return 0;
 }
 
-static int l_old_lib_size;
+static long l_old_lib_size;
 int
 new_sets_convergent_lib (Tembed *emb, Tbundle_set *bundle_set, Tpoint_set **lib_set, Tpoint_set **pre_set)
 {
-    int i;
+    long i;
 
     if (make_sets (emb, bundle_set) < 0)
     {
@@ -433,6 +444,7 @@ int
 next_set_convergent_lib ()
 {
     int    i, idx1, idx2;
+    long   l;
     Tpoint *sav_point;
 
     if ( ((l_lib_shift_meth == LIB_SHIFT_RANDOM || l_lib_shift_meth == LIB_SHIFT_SHIFT) &&
@@ -458,6 +470,15 @@ next_set_convergent_lib ()
 
         /*l_permut_swaps = l_lib_size / log ((double) l_n_bootstrap) + 1;*/
         l_permut_swaps = l_lib_size / 2 + 1;
+
+        /* If the lib set also has an attached kd-tree, free it here, because it now has other vectors.
+         * The prediction function will make  a new kd-tree if needed.
+         */
+        if (l_lib_set->tx)
+        {
+            free_kdt (l_lib_set->tx);
+            l_lib_set->tx = NULL;
+        }
     }
 
 
@@ -484,8 +505,8 @@ next_set_convergent_lib ()
             l_shift += l_lib_shift; /*prepare next shift through lib*/
             break;
         case LIB_SHIFT_BOOTSTRAP:
-            for (i = 0; i < l_lib_size; i++)
-                l_all_point_rnd[i] = l_all_points + (rand() % l_n_points);
+            for (l = 0; l < l_lib_size; l++)
+                l_all_point_rnd[l] = l_all_points + (rand() % l_n_points);
             l_i_boot++;
             break;
         case LIB_SHIFT_BOOT_PERMUT:
@@ -514,7 +535,10 @@ int
 free_sets_convergent_lib ()
 {
     if (l_pre_set && l_pre_set->point)
+    {
         free (l_pre_set->point);
+        l_pre_set->point = NULL;
+    }
     free_sets ();
     return 0;
 }
@@ -548,7 +572,7 @@ new_sets_k_fold (Tembed *emb, Tbundle_set *bundle_set, Tpoint_set **lib_set, Tpo
         return -1;
     }
 
-    if (l_k_fold > l_n_points)
+    if ((long) l_k_fold > l_n_points)
     {
         free_sets ();
         *lib_set = NULL;
@@ -609,6 +633,15 @@ next_set_k_fold ()
     l_k++;
     l_set_num++;
 
+    /* If the lib set also has an attached kd-tree, free it here, because it now has other vectors.
+     * The prediction function will make  a new kd-tree if needed.
+     */
+    if (l_lib_set->tx)
+    {
+        free_kdt (l_lib_set->tx);
+        l_lib_set->tx = NULL;
+    }
+
     return 0;
 }
 
@@ -626,11 +659,12 @@ init_set_looc (Tnew_sets *new_sets, Tnext_set *next_set, Tfree_set *free_set)
 int
 new_sets_looc (Tembed *emb, Tbundle_set *bundle_set, Tpoint_set **lib_set, Tpoint_set **pre_set)
 {
-    int i;
+    long i;
 
     /* Note: exclusion of predictee from library set is done by exclusion function
      *       during predictee set traversal.
      */
+
 
     if (make_sets (emb, bundle_set) < 0)
     {
@@ -677,10 +711,19 @@ int
 free_sets_looc (void)
 {
     if (l_pre_set && l_pre_set->point)
+    {
         free (l_pre_set->point);
+        l_pre_set->point = NULL;
+    }
+
     if (l_lib_set && l_lib_set->point)
+    {
         free (l_lib_set->point);
+        l_lib_set->point = NULL;
+    }
+
     free_sets ();
+    return 0;
 }
 
 /* bootstrap validation *****************************************************/
@@ -751,7 +794,7 @@ init_set_bootstrap (int lib_size, int n_bootstrap, bool pre_set_is_lib, bool lib
 int
 new_sets_bootstrap (Tembed *emb, Tbundle_set *bundle_set, Tpoint_set **lib_set, Tpoint_set **pre_set)
 {
-    int i;
+    long i;
     /* Note: exclusion of predictee from library set is done by exclusion function
      *       during predictee set traversal.
      * Use complete set as predictee set.
@@ -792,7 +835,6 @@ new_sets_bootstrap (Tembed *emb, Tbundle_set *bundle_set, Tpoint_set **lib_set, 
 
     if (l_per_addit_group) /*bootstrapping is done per group of additional values, keeping the same number of points per group.*/
     {
-        int n_points_in_group, j;
         bool first_group;
 
         l_sort_structs = (Tsort_struct *) realloc (l_sort_structs, l_lib_size * sizeof (Tsort_struct));
@@ -837,7 +879,8 @@ new_sets_bootstrap (Tembed *emb, Tbundle_set *bundle_set, Tpoint_set **lib_set, 
 int
 next_set_bootstrap ()
 {
-    int i, j, k;
+    long i;
+    int           h, j, k;
 
     if (l_i_boot == l_n_bootstrap)
     {
@@ -850,7 +893,7 @@ next_set_bootstrap ()
         k = 0;
         for (j = 0; j < l_n_addit_group; j++)
         {
-            for (i = 0; i < l_sort_addit_group[j].n; i++)
+            for (h = 0; h < l_sort_addit_group[j].n; h++)
             {
                 l_lib_set->point[k] = (l_sort_addit_group[j].begin + rand () % l_sort_addit_group[j].n)->point;
                 k++;
@@ -869,6 +912,15 @@ next_set_bootstrap ()
     log_set (LOG_LIB_SET, l_lib_set);
     log_set (LOG_PRE_SET, l_pre_set);
 
+    /* If the lib set also has an attached kd-tree, free it here, because it now has other vectors.
+     * The prediction function will make  a new kd-tree if needed.
+     */
+    if (l_lib_set->tx)
+    {
+        free_kdt (l_lib_set->tx);
+        l_lib_set->tx = NULL;
+    }
+
     l_set_num++; /*prepare for next round*/
     l_i_boot++;
 
@@ -879,17 +931,32 @@ int
 free_sets_bootstrap (void)
 {
     if (l_pre_set && l_pre_set->point && !l_pre_set_is_lib)
+    {
         free (l_pre_set->point);
+        l_pre_set->point = NULL;
+    }
+
     if (l_lib_set && l_lib_set->point)
+    {
         free (l_lib_set->point);
+        l_lib_set->point = NULL;
+    }
+
     if (l_sort_structs)
+    {
         free (l_sort_structs);
-    l_sort_structs = NULL;
+        l_sort_structs = NULL;
+    }
+
     if (l_sort_addit_group)
+    {
         free (l_sort_addit_group);
-    l_sort_addit_group = NULL;
-    l_n_addit_group = 0;
+        l_sort_addit_group = NULL;
+        l_n_addit_group = 0;
+    }
     free_sets ();
+
+    return 0;
 }
 
 /* user defined validation *****************************************************/
@@ -910,7 +977,8 @@ new_sets_user_val (Tembed *emb, Tbundle_set *bundle_set, Tpoint_set **lib_set, T
      * and which ones in the prediction set.
      */
     Tpoint **lib_point, **pre_point, *point;
-    int    i, n_lib, n_pre;
+    long n_lib, n_pre;
+    long i;
 
     if (make_sets (emb, bundle_set) < 0)
     {
@@ -985,10 +1053,20 @@ int
 free_sets_user_val (void)
 {
     if (l_pre_set && l_pre_set->point)
+    {
         free (l_pre_set->point);
+        l_pre_set->point = NULL;
+    }
+
     if (l_lib_set && l_lib_set->point)
+    {
         free (l_lib_set->point);
+        l_lib_set->point = NULL;
+    }
+
     free_sets ();
+
+    return 0;
 }
 
 int
@@ -1092,7 +1170,6 @@ log_set_par_user_val ()
 int
 log_set (Tlog_levels log_level, Tpoint_set *set)
 {
-    char set_code[2];
     int  i;
     Tpoint **pt;
     static struct s_log_sh log_sh;
