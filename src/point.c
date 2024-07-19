@@ -34,17 +34,24 @@ static int   l_e;
 int 
 exclude_init (Texcl excl, int var_win, int e)
 {
-        l_excl    = excl;
-        l_var_win = var_win;
-        l_e       = e;
+    l_excl    = excl;
+    l_var_win = var_win;
+    l_e       = e;
+
+    return 0;
 }
 
 bool 
 exclude (Tpoint *tg, Tpoint *cd)  /*exclude candidate from prediction set for target?*/
 {
-    if (l_excl & (T_EXCL_TIME_COORD + T_EXCL_TIME_WIN + T_EXCL_SELF) &&
+    if (tg->co_val == cd->co_val)
+        return true;
+
+#if 0
+    if ( (l_excl & (T_EXCL_TIME_COORD + T_EXCL_TIME_WIN + T_EXCL_SELF)) &&
             tg == cd)
         return true;
+#endif
 
     if (l_excl & T_EXCL_TIME_COORD)
     {
@@ -68,9 +75,45 @@ exclude (Tpoint *tg, Tpoint *cd)  /*exclude candidate from prediction set for ta
     if(l_excl & T_EXCL_TIME_WIN)
     {
         /*exclude if vectors are too close in time*/
-        if (abs ((*tg->t) - (*cd->t)) < l_var_win)
+        if (abs ((int)((*tg->t) - (*cd->t))) < l_var_win)
             return true;
     }
 
     return false;
+}
+
+int compare_point_vec_num (const void *a, const void *b)
+{
+    Tpoint **x = (Tpoint **) a;
+    Tpoint **y = (Tpoint **) b;
+
+    if ((*x)->vec_num - (*y)->vec_num > 0)
+        return 1;
+    if ((*x)->vec_num - (*y)->vec_num < 0)
+        return -1;
+    return 0;
+}
+
+int compare_long (const void *a, const void *b)
+{
+    long *x = (long *) a;
+    long *y = (long *) b;
+
+    if (*x - *y > 0)
+        return 1;
+    else if (*x - *y < 0)
+        return -1;
+    return 0;
+}
+
+int compare_double (const void *a, const void *b)
+{
+    double *x = (double *) a;
+    double *y = (double *) b;
+
+    if (*x - *y > 0)
+        return 1;
+    else if (*x - *y < 0)
+        return -1;
+    return 0;
 }
